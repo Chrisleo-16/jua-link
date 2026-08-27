@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+/* Status pill colors used across order tracking, admin tables, and
+   the artisan mini-page. Centralised here so every surface (customer
+   tracker, admin dashboard, SMS log) shows the same color for the
+   same status. */
+.status-pending_artisan_confirmation { @apply bg-gold-soft text-charcoal; }
+.status-accepted { @apply bg-forest-soft text-forest; }
+.status-declined { @apply bg-rust-soft text-rust; }
+.status-callback_requested { @apply bg-gold-soft text-charcoal; }
+.status-quotation_needed { @apply bg-muted text-charcoal; }
+.status-deposit_discussion { @apply bg-muted text-charcoal; }
+.status-in_production { @apply bg-forest-soft text-forest; }
+.status-ready { @apply bg-forest-soft text-forest; }
+.status-completed { @apply bg-forest text-white; }
+.status-cancelled { @apply bg-rust-soft text-rust; }
