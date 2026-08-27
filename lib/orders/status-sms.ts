@@ -1,4 +1,4 @@
-import { sendSms } from "@/lib/africastalking/sms";
+import { sendGatewaySms } from "@/lib/africastalking/sms";
 import type { OrderStatus } from "@/lib/types";
 import {
   customerAcceptedSms,
@@ -43,9 +43,9 @@ export async function notifyCustomerOnStatusChange(params: NotifyCustomerStatusP
     return { skipped: true as const };
   }
 
-  const result = await sendSms({
+  const result = await sendGatewaySms({
     to: customerPhone,
-    message,
+    body: message,
     orderRequestId,
   });
 

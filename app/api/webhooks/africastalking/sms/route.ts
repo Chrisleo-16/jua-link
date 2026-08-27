@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { parseArtisanReplyInput, statusFromArtisanResponse } from "@/lib/types";
 import { notifyCustomerOnStatusChange } from "@/lib/orders/status-sms";
-import { handleArtisanOnboardingSms } from "@/lib/artisans/sms-onboarding";
 
 const SMS_WEBHOOK_SECRET = process.env.AFRICASTALKING_SMS_WEBHOOK_SECRET;
 
@@ -48,17 +47,6 @@ export async function POST(req: NextRequest) {
     if (existing) {
       return NextResponse.json({ status: "ignored", reason: "duplicate_message" });
     }
-  }
-
-  const onboarding = await handleArtisanOnboardingSms({
-    from,
-    text,
-    messageId,
-    payload,
-  });
-
-  if (onboarding.handled) {
-    return NextResponse.json({ status: onboarding.status ?? "processed", reason: onboarding.reason });
   }
 
   // Step 1: identify the artisan by phone number.

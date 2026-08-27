@@ -105,49 +105,16 @@ function createSupabaseMock(seed?: {
 }
 
 const notifyCustomerOnStatusChange = vi.fn();
-const handleArtisanOnboardingSms = vi.fn();
 
 vi.mock("@/lib/orders/status-sms", () => ({
   notifyCustomerOnStatusChange,
-}));
-
-vi.mock("@/lib/artisans/sms-onboarding", () => ({
-  handleArtisanOnboardingSms,
 }));
 
 describe("SMS webhook route", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
-    handleArtisanOnboardingSms.mockResolvedValue({ handled: false });
     process.env.AFRICASTALKING_SMS_WEBHOOK_SECRET = "test-secret";
-  });
-
-  it("short-circuits when onboarding flow handles the message", async () => {
-    handleArtisanOnboardingSms.mockResolvedValueOnce({
-      handled: true,
-      status: "onboarding_started",
-    });
-
-    const mock = createSupabaseMock();
-    vi.doMock("@/lib/supabase/server", () => ({
-      createServiceRoleClient: () => mock.supabase,
-    }));
-
-    const { POST } = await import("@/app/api/webhooks/africastalking/sms/route");
-
-    const req = new NextRequest("http://localhost/api/webhooks/africastalking/sms?token=test-secret", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ from: "+254700111111", text: "JOIN", id: "msg-join-1" }),
-    });
-
-    const res = await POST(req);
-    const body = await res.json();
-
-    expect(body).toEqual({ status: "onboarding_started", reason: undefined });
-    expect(handleArtisanOnboardingSms).toHaveBeenCalledTimes(1);
-    expect(notifyCustomerOnStatusChange).not.toHaveBeenCalled();
   });
 
   it("ignores duplicate inbound message ids", async () => {

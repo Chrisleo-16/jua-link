@@ -7,6 +7,14 @@ interface SendSmsParams {
   artisanId?: string;
 }
 
+export interface SmsGatewayParams {
+  to: string; // E.164, e.g. +2547XXXXXXXX
+  body: string;
+  title?: string;
+  orderRequestId?: string;
+  artisanId?: string;
+}
+
 const AT_USERNAME = process.env.AFRICASTALKING_USERNAME;
 const AT_API_KEY = process.env.AFRICASTALKING_API_KEY;
 const AT_SENDER_ID = process.env.AFRICASTALKING_SENDER_ID;
@@ -17,6 +25,40 @@ const AT_SMS_BASE_URL =
 /** True when real credentials are configured. Falls back to a console-logged
  *  mock otherwise, so the whole order flow is demoable with zero setup. */
 const isLiveMode = Boolean(AT_USERNAME && AT_API_KEY);
+
+async function postToAfricaTalking(body: URLSearchParams) {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const response = await fetch(`${AT_SMS_BASE_URL}/version1/messaging`, {
+        method: "POST",
+        headers: {
+          apiKey: AT_API_KEY!,
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body,
+      });
+
+      return response;
+    } catch (error) {
+      lastError = error;
+
+      const errCode = (error as { cause?: { code?: string } })?.cause?.code;
+      const isTransientTls = errCode === "ERR_SSL_WRONG_VERSION_NUMBER";
+
+      // Retry once for transient transport failures seen in dev tunnels/networks.
+      if (attempt < 2 && isTransientTls) {
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw lastError;
+}
 
 /**
  * Sends an SMS via Africa's Talking (or logs it in mock mode), and always
@@ -31,21 +73,15 @@ export async function sendSms({ to, message, orderRequestId, artisanId }: SendSm
 
   if (isLiveMode) {
     try {
-      const response = await fetch(`${AT_SMS_BASE_URL}/version1/messaging`, {
-        method: "POST",
-        headers: {
-          apiKey: AT_API_KEY!,
-          "Content-Type": "application/x-www-form-urlencoded",
-          Accept: "application/json",
-        },
-        body: new URLSearchParams({
+      const response = await postToAfricaTalking(
+        new URLSearchParams({
           username: AT_USERNAME!,
           to,
           message,
           // Sandbox rejects many sender IDs; allow provider default there.
           ...(!isSandboxMode && AT_SENDER_ID ? { from: AT_SENDER_ID } : {}),
-        }),
-      });
+        })
+      );
 
       const data = await response.json();
       providerPayload = data;
@@ -121,4 +157,31 @@ export async function sendSms({ to, message, orderRequestId, artisanId }: SendSm
     success: processingResult === "outbound_sent" || processingResult === "outbound_mock",
     deliveryStatus,
   };
+}
+
+/**
+ * Feature-facing gateway for outbound SMS.
+ * Other modules should call this with simple title/body fields.
+ */
+export async function sendGatewaySms({
+  to,
+  body,
+  title,
+  orderRequestId,
+  artisanId,
+}: SmsGatewayParams) {
+  const trimmedBody = body.trim();
+  const trimmedTitle = title?.trim();
+
+  const message =
+    trimmedTitle && trimmedBody
+      ? `${trimmedTitle}: ${trimmedBody}`
+      : trimmedBody || trimmedTitle || "";
+
+  return sendSms({
+    to,
+    message,
+    orderRequestId,
+    artisanId,
+  });
 }

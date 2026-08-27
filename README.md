@@ -86,7 +86,8 @@ Talking account.
 
 ### Outbound: use one function only
 
-- Call `sendSms()` in `lib/africastalking/sms.ts` for all outbound sends.
+- Call `sendGatewaySms()` in `lib/africastalking/sms.ts` for all outbound sends.
+- Pass `to`, `body`, and optional `title` (it auto-renders as `title: body`).
 - Pass `orderRequestId` and `artisanId` whenever known so admin logs remain linked.
 - Do not call Africa's Talking APIs directly from feature code.
 
@@ -113,22 +114,6 @@ Talking account.
   - if reference is present: match that exact pending order for that artisan
   - if not: fallback to oldest pending order (FIFO)
 6. Status update + status event + customer SMS notifier.
-
-### Artisan signup via SMS (new)
-
-- An unknown sender can start artisan onboarding by texting `JOIN` (also accepts
-  `APPLY` or `ARTISAN`) to your Africa's Talking number.
-- The webhook runs a step-by-step flow and stores progress in
-  `sms_artisan_onboarding_sessions`.
-- Prompts collect: full name, business name, location, craft category,
-  products made, years experience (or `SKIP`), description, and final
-  `YES` confirmation.
-- On `YES`, a new `artisans` row is created with:
-  - `verification_status = 'PENDING'`
-  - `is_active = false`
-- User can send `CANCEL` at any step to stop onboarding.
-- If a phone number is already registered as an artisan, webhook returns
-  `artisan_already_registered` and does not create duplicates.
 
 ### Callback URL to configure in Africa's Talking
 
