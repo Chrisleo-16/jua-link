@@ -48,6 +48,14 @@ const config: Config = {
           DEFAULT: "#B3261E",
           foreground: "#FAF8F4",
         },
+
+        "warm-cream": "#ffedd7",
+        "paper-white": "#fdfaf5",
+        "walnut-shadow": "#100904",
+        "bark-brown": "#382416",
+        "cork-border": "#40372e",
+        driftwood: "#6c5f51",
+        ember: "#dc5000",
       },
       borderRadius: {
         lg: "0.75rem",
@@ -57,6 +65,8 @@ const config: Config = {
       fontFamily: {
         sans: ["var(--font-body)", "sans-serif"],
         display: ["var(--font-display)", "serif"],
+        mono: ["var(--font-mono)", "monospace"],
+        editorial: ["var(--font-editorial)", "sans-serif"],
       },
     },
   },
