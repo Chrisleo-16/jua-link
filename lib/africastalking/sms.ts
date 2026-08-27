@@ -41,13 +41,31 @@ export async function sendSms({ to, message, orderRequestId, artisanId }: SendSm
         }),
       });
 
-      const data = await response.json();
+      // Africa's Talking can return non-JSON bodies on some failures.
+      const rawBody = await response.text();
+      let data: any = null;
+
+      try {
+        data = JSON.parse(rawBody);
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok) {
+        console.error("Africa's Talking SMS API error", {
+          status: response.status,
+          statusText: response.statusText,
+          body: rawBody,
+        });
+        deliveryStatus = "failed";
+      }
+
       const recipient = data?.SMSMessageData?.Recipients?.[0];
 
-      if (recipient) {
+      if (response.ok && recipient) {
         africaTalkingMessageId = recipient.messageId ?? null;
         deliveryStatus = recipient.status ?? "sent";
-      } else {
+      } else if (deliveryStatus !== "failed") {
         deliveryStatus = "failed";
       }
     } catch (error) {
