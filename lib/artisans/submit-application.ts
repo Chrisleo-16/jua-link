@@ -41,9 +41,10 @@ export async function submitArtisanApplication(input: unknown): Promise<ArtisanA
     phone_number: data.phoneNumber,
     location: data.location,
     craft_category: data.craftCategory,
-    products_made: data.productsMade,
     years_experience: data.yearsExperience ?? null,
-    description: data.description,
+    // products_made has no dedicated column — folded into description so
+    // nothing the applicant wrote is lost.
+    description: `Products made: ${data.productsMade}\n\n${data.description}`,
     verification_status: "PENDING",
     is_active: false, // stays inactive until an admin verifies them
   });
