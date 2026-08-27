@@ -1,6 +1,6 @@
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { generateOrderReference, RequestType } from "@/lib/types";
-import { sendSms } from "@/lib/africastalking/sms";
+import { sendGatewaySms } from "@/lib/africastalking/sms";
 import { artisanRequestSms, customerSubmittedSms } from "@/lib/africastalking/templates";
 
 export interface OrderCreateInput {
@@ -77,9 +77,9 @@ export async function createOrderRequest(input: OrderCreateInput): Promise<Creat
     return { success: false, error: "Something went wrong saving your request. Try again." };
   }
 
-  await sendSms({
+  await sendGatewaySms({
     to: artisan.phone_number,
-    message: artisanRequestSms({
+    body: artisanRequestSms({
       orderReference,
       productName: product.name,
       quantity: input.quantity,
@@ -89,9 +89,9 @@ export async function createOrderRequest(input: OrderCreateInput): Promise<Creat
     artisanId: artisan.id,
   });
 
-  await sendSms({
+  await sendGatewaySms({
     to: input.customerPhone,
-    message: customerSubmittedSms(orderReference),
+    body: customerSubmittedSms(orderReference),
   });
 
   return { success: true, orderReference };
