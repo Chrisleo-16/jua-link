@@ -82,6 +82,80 @@ Talking account.
 5. Check `order_requests.status` is now `ACCEPTED`, `order_status_events`
    has a new row, and a customer-facing "accepted" SMS was logged.
 
+## SMS integration contract (backend handoff)
+
+### Outbound: use one function only
+
+- Call `sendSms()` in `lib/africastalking/sms.ts` for all outbound sends.
+- Pass `orderRequestId` and `artisanId` whenever known so admin logs remain linked.
+- Do not call Africa's Talking APIs directly from feature code.
+
+### Message copy: templates only
+
+- Keep SMS wording in `lib/africastalking/templates.ts`.
+- For status-based customer updates, call `notifyCustomerOnStatusChange()` in
+  `lib/orders/status-sms.ts` instead of building inline message strings.
+
+### Inbound webhook behavior
+
+`POST /api/webhooks/africastalking/sms` now does:
+
+1. Optional webhook auth check via `AFRICASTALKING_SMS_WEBHOOK_SECRET`
+  (query `?token=` or header `x-at-webhook-token`).
+2. Idempotency check by inbound `id` (`africa_talking_message_id`) to avoid
+  double-processing provider retries.
+3. Artisan lookup by `from` phone number.
+4. Reply parsing via `parseArtisanReplyInput()` in `lib/types.ts`, supporting:
+  - `1`, `2`, `3`
+  - `ACCEPT`, `DECLINE`, `CALLBACK`
+  - explicit references like `JL-2048 1`
+5. Order match strategy:
+  - if reference is present: match that exact pending order for that artisan
+  - if not: fallback to oldest pending order (FIFO)
+6. Status update + status event + customer SMS notifier.
+
+### Artisan signup via SMS (new)
+
+- An unknown sender can start artisan onboarding by texting `JOIN` (also accepts
+  `APPLY` or `ARTISAN`) to your Africa's Talking number.
+- The webhook runs a step-by-step flow and stores progress in
+  `sms_artisan_onboarding_sessions`.
+- Prompts collect: full name, business name, location, craft category,
+  products made, years experience (or `SKIP`), description, and final
+  `YES` confirmation.
+- On `YES`, a new `artisans` row is created with:
+  - `verification_status = 'PENDING'`
+  - `is_active = false`
+- User can send `CANCEL` at any step to stop onboarding.
+- If a phone number is already registered as an artisan, webhook returns
+  `artisan_already_registered` and does not create duplicates.
+
+### Callback URL to configure in Africa's Talking
+
+Set the SMS callback URL to:
+
+- Production:
+  - `https://YOUR_DOMAIN/api/webhooks/africastalking/sms?token=YOUR_SECRET`
+- Local (through a public tunnel during testing):
+  - `https://YOUR_TUNNEL_DOMAIN/api/webhooks/africastalking/sms?token=YOUR_SECRET`
+
+Also set the same secret in `.env.local`:
+
+```bash
+AFRICASTALKING_SMS_WEBHOOK_SECRET=YOUR_SECRET
+```
+
+If you prefer headers over query strings, Africa's Talking must send
+`x-at-webhook-token` with the same value.
+
+### New SMS telemetry fields
+
+Migration `supabase/migrations/0003_sms_hardening.sql` adds:
+
+- `sms_messages.provider_payload` (`jsonb`) for raw provider payload/response
+- `sms_messages.processing_result` (`text`) for processing outcomes
+- inbound unique index on `africa_talking_message_id` for idempotency
+
 ## Phase 2 additions (customer pages + USSD)
 
 - `/products` — filterable catalogue (`lib/products/queries.ts`)

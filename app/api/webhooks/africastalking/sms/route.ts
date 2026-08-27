@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
-import { parseArtisanReply, statusFromArtisanResponse } from "@/lib/types";
-import { sendSms } from "@/lib/africastalking/sms";
-import {
-  customerAcceptedSms,
-  customerDeclinedSms,
-  customerCallbackSms,
-} from "@/lib/africastalking/templates";
+import { parseArtisanReplyInput, statusFromArtisanResponse } from "@/lib/types";
+import { notifyCustomerOnStatusChange } from "@/lib/orders/status-sms";
+import { handleArtisanOnboardingSms } from "@/lib/artisans/sms-onboarding";
+
+const SMS_WEBHOOK_SECRET = process.env.AFRICASTALKING_SMS_WEBHOOK_SECRET;
+
+function hasValidWebhookSecret(req: NextRequest): boolean {
+  if (!SMS_WEBHOOK_SECRET) return true;
+  const querySecret = req.nextUrl.searchParams.get("token");
+  const headerSecret = req.headers.get("x-at-webhook-token");
+  return querySecret === SMS_WEBHOOK_SECRET || headerSecret === SMS_WEBHOOK_SECRET;
+}
 
 /**
  * Africa's Talking posts inbound SMS as application/x-www-form-urlencoded
@@ -14,7 +19,12 @@ import {
  * https://developers.africastalking.com/docs/sms/inbound
  */
 export async function POST(req: NextRequest) {
+  if (!hasValidWebhookSecret(req)) {
+    return NextResponse.json({ status: "ignored", reason: "unauthorized" });
+  }
+
   const form = await req.formData();
+  const payload = Object.fromEntries(form.entries());
   const from = form.get("from")?.toString(); // artisan's phone number
   const text = form.get("text")?.toString();
   const messageId = form.get("id")?.toString() ?? null;
@@ -26,6 +36,30 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = createServiceRoleClient();
+
+  if (messageId) {
+    const { data: existing } = await supabase
+      .from("sms_messages")
+      .select("id")
+      .eq("direction", "inbound")
+      .eq("africa_talking_message_id", messageId)
+      .maybeSingle();
+
+    if (existing) {
+      return NextResponse.json({ status: "ignored", reason: "duplicate_message" });
+    }
+  }
+
+  const onboarding = await handleArtisanOnboardingSms({
+    from,
+    text,
+    messageId,
+    payload,
+  });
+
+  if (onboarding.handled) {
+    return NextResponse.json({ status: onboarding.status ?? "processed", reason: onboarding.reason });
+  }
 
   // Step 1: identify the artisan by phone number.
   const { data: artisan } = await supabase
@@ -42,22 +76,73 @@ export async function POST(req: NextRequest) {
       message_body: text,
       africa_talking_message_id: messageId,
       delivery_status: "unmatched_sender",
+      processing_result: "unmatched_sender",
+      provider_payload: payload,
     });
     return NextResponse.json({ status: "ignored", reason: "unknown sender" });
   }
 
-  // Step 2: find that artisan's most recent request still awaiting a reply.
-  // (An artisan may have several open requests — we resolve the OLDEST
-  // pending one first, first-in-first-out, rather than the newest, so
-  // requests can't get starved by a flurry of later ones.)
-  const { data: pendingOrder } = await supabase
-    .from("order_requests")
-    .select("id, order_reference, status, customer_phone")
-    .eq("artisan_id", artisan.id)
-    .eq("status", "PENDING_ARTISAN_CONFIRMATION")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .single();
+  const parsedReply = parseArtisanReplyInput(text);
+  if (!parsedReply) {
+    await supabase.from("sms_messages").insert({
+      artisan_id: artisan.id,
+      customer_phone: from,
+      direction: "inbound",
+      message_body: text,
+      africa_talking_message_id: messageId,
+      delivery_status: "received",
+      processing_result: "parse_failed",
+      provider_payload: payload,
+    });
+    return NextResponse.json({ status: "unrecognized_reply" });
+  }
+
+  let pendingOrder: {
+    id: string;
+    order_reference: string;
+    status: string;
+    customer_phone: string;
+  } | null = null;
+
+  if (parsedReply.orderReference) {
+    const { data: referencedOrder } = await supabase
+      .from("order_requests")
+      .select("id, order_reference, status, customer_phone")
+      .eq("artisan_id", artisan.id)
+      .eq("status", "PENDING_ARTISAN_CONFIRMATION")
+      .eq("order_reference", parsedReply.orderReference)
+      .maybeSingle();
+
+    pendingOrder = referencedOrder;
+
+    if (!pendingOrder) {
+      await supabase.from("sms_messages").insert({
+        artisan_id: artisan.id,
+        customer_phone: from,
+        direction: "inbound",
+        message_body: text,
+        africa_talking_message_id: messageId,
+        delivery_status: "unknown_reference",
+        processing_result: "unknown_reference",
+        provider_payload: payload,
+      });
+      return NextResponse.json({ status: "ignored", reason: "unknown_reference" });
+    }
+  }
+
+  if (!pendingOrder) {
+    // No explicit order reference in the SMS; use FIFO fallback.
+    const { data: oldestPendingOrder } = await supabase
+      .from("order_requests")
+      .select("id, order_reference, status, customer_phone")
+      .eq("artisan_id", artisan.id)
+      .eq("status", "PENDING_ARTISAN_CONFIRMATION")
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    pendingOrder = oldestPendingOrder;
+  }
 
   if (!pendingOrder) {
     await supabase.from("sms_messages").insert({
@@ -67,6 +152,8 @@ export async function POST(req: NextRequest) {
       message_body: text,
       africa_talking_message_id: messageId,
       delivery_status: "no_pending_order",
+      processing_result: "no_pending_order",
+      provider_payload: payload,
     });
     return NextResponse.json({ status: "ignored", reason: "no pending order for artisan" });
   }
@@ -81,16 +168,11 @@ export async function POST(req: NextRequest) {
     message_body: text,
     africa_talking_message_id: messageId,
     delivery_status: "received",
+    processing_result: "received",
+    provider_payload: payload,
   });
 
-  // Step 4: parse the reply.
-  const response = parseArtisanReply(text);
-
-  if (!response) {
-    // Couldn't understand the reply. Leave the order PENDING and let a
-    // coordinator follow up manually rather than silently dropping it.
-    return NextResponse.json({ status: "unrecognized_reply" });
-  }
+  const response = parsedReply.response;
 
   const newStatus = statusFromArtisanResponse(response);
 
@@ -107,21 +189,17 @@ export async function POST(req: NextRequest) {
     order_request_id: pendingOrder.id,
     old_status: pendingOrder.status,
     new_status: newStatus,
-    note: `Artisan replied via SMS: "${text}"`,
+    note: parsedReply.orderReference
+      ? `Artisan replied via SMS: "${text}" (reference=${parsedReply.orderReference})`
+      : `Artisan replied via SMS: "${text}"`,
   });
 
-  // Step 6: notify the customer with the matching template.
-  const customerMessage =
-    response === "accepted"
-      ? customerAcceptedSms(pendingOrder.order_reference, artisan.business_name)
-      : response === "declined"
-      ? customerDeclinedSms(pendingOrder.order_reference)
-      : customerCallbackSms(pendingOrder.order_reference);
-
-  await sendSms({
-    to: pendingOrder.customer_phone,
-    message: customerMessage,
+  await notifyCustomerOnStatusChange({
     orderRequestId: pendingOrder.id,
+    orderReference: pendingOrder.order_reference,
+    customerPhone: pendingOrder.customer_phone,
+    status: newStatus,
+    workshopName: artisan.business_name,
   });
 
   return NextResponse.json({ status: "processed", newStatus });

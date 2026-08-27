@@ -13,7 +13,7 @@ export function artisanRequestSms(params: {
   const timelinePart = timeline ? ` Buyer needs it ${timeline}.` : "";
   return (
     `JuaLink: New request ${orderReference}. Product: ${quantity} ${productName}. ` +
-    `Location: ${location}.${timelinePart} Reply 1 to ACCEPT, 2 to DECLINE, 3 for CALLBACK.`
+    `Location: ${location}.${timelinePart} Reply '${orderReference} 1' to ACCEPT, '${orderReference} 2' to DECLINE, '${orderReference} 3' for CALLBACK.`
   );
 }
 
@@ -42,5 +42,24 @@ export function customerSubmittedSms(orderReference: string) {
   return (
     `JuaLink: Request ${orderReference} submitted. We've notified the artisan — ` +
     `you'll get an SMS as soon as they respond.`
+  );
+}
+
+export function customerReadySms(orderReference: string, workshopName: string) {
+  return `JuaLink: Request ${orderReference} is ready from ${workshopName}. Please coordinate collection/delivery with the artisan.`;
+}
+
+export function customerCompletedSms(orderReference: string) {
+  return `JuaLink: Request ${orderReference} is marked completed. Thank you for supporting local artisans.`;
+}
+
+export function customerCancelledSms(orderReference: string) {
+  return `JuaLink: Request ${orderReference} has been cancelled. Contact support if this was unexpected.`;
+}
+
+export function artisanPendingReminderSms(orderReference: string) {
+  return (
+    `JuaLink reminder: request ${orderReference} is awaiting your response. ` +
+    `Reply '${orderReference} 1' to ACCEPT, '${orderReference} 2' to DECLINE, or '${orderReference} 3' for CALLBACK.`
   );
 }

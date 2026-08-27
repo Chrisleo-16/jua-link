@@ -61,6 +61,11 @@ export type UserRole = "admin" | "artisan" | "customer";
 
 export type SmsDirection = "inbound" | "outbound";
 
+export interface ParsedArtisanReply {
+  response: ArtisanResponse;
+  orderReference: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // SMS reply parsing — the ONLY place that decides what an artisan's text
 // reply means. Both the webhook route and any tests should call this rather
@@ -73,15 +78,31 @@ export type SmsDirection = "inbound" | "outbound";
  * should not guess — it should log it and let a coordinator follow up).
  */
 export function parseArtisanReply(rawText: string): ArtisanResponse | null {
-  const text = rawText.trim().toUpperCase();
+  return parseArtisanReplyInput(rawText)?.response ?? null;
+}
+
+/**
+ * Parses artisan replies that may include an explicit reference, e.g.
+ * "JL-2048 1" or "accept jl-2048".
+ */
+export function parseArtisanReplyInput(rawText: string): ParsedArtisanReply | null {
+  const normalized = rawText.trim().toUpperCase();
+  if (!normalized) return null;
+
+  const referenceMatch = normalized.match(/\bJL-\d{4,}\b/);
+  const orderReference = referenceMatch?.[0] ?? null;
+  const command = normalized
+    .replace(/\bJL-\d{4,}\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
   const ACCEPT_WORDS = ["1", "ACCEPT", "YES"];
   const DECLINE_WORDS = ["2", "DECLINE", "NO"];
   const CALLBACK_WORDS = ["3", "CALLBACK", "CALL ME", "CALL"];
 
-  if (ACCEPT_WORDS.includes(text)) return "accepted";
-  if (DECLINE_WORDS.includes(text)) return "declined";
-  if (CALLBACK_WORDS.includes(text)) return "callback_requested";
+  if (ACCEPT_WORDS.includes(command)) return { response: "accepted", orderReference };
+  if (DECLINE_WORDS.includes(command)) return { response: "declined", orderReference };
+  if (CALLBACK_WORDS.includes(command)) return { response: "callback_requested", orderReference };
 
   return null;
 }
