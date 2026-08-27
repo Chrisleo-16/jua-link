@@ -44,3 +44,11 @@ export function customerSubmittedSms(orderReference: string) {
     `you'll get an SMS as soon as they respond.`
   );
 }
+
+export function artisanWelcomeSms(name: string) {
+  return (
+    `JuaLink: Welcome ${name}! Your artisan account is now active. ` +
+    `You can list products, receive customer requests, and reply by SMS: ` +
+    `1 ACCEPT, 2 DECLINE, 3 CALLBACK.`
+  );
+}

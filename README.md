@@ -20,7 +20,7 @@ sendSms() → customer gets: "Request submitted..."
 Artisan replies by SMS (real phone, or curl in mock mode)
         │
         ▼
-POST /api/webhooks/africastalking/sms  (app/api/webhooks/africastalking/sms/route.ts)
+POST /api/sms  (app/api/sms/route.ts)
   1. find artisan by phone number
   2. find their OLDEST order still PENDING_ARTISAN_CONFIRMATION
   3. log the inbound message regardless of whether we understood it
@@ -74,7 +74,7 @@ Talking account.
    Africa's Talking would:
 
    ```bash
-   curl -X POST http://localhost:3000/api/webhooks/africastalking/sms \
+  curl -X POST http://localhost:3000/api/sms \
      -d "from=+2547XXXXXXXX" -d "text=1" -d "id=test-msg-1"
    ```
 
@@ -88,7 +88,7 @@ Talking account.
 - `/products/[slug]` — gallery, artisan summary, and the request form
 - `/track-order` — reference + phone lookup via the `track_order` RPC
 - `/join-as-artisan` — application form, always lands as `PENDING`
-- `POST /api/webhooks/africastalking/ussd` — full browse/request/track flow
+- `POST /api/ussd` — full browse/request/track flow
 
 `lib/orders/create-order.ts` now holds the actual order-creation logic
 (product/artisan lookup, insert, both SMS sends). Both the web form
@@ -101,7 +101,7 @@ means.
 Africa's Talking sends the **full accumulated `text`** on every request —
 e.g. `"2*1*3*4*Kasarani"` for someone who chose "Request a product" →
 category 1 → product 3 → quantity 4 → typed "Kasarani". There's no session
-to read from between requests, so `app/api/webhooks/africastalking/ussd/route.ts`
+to read from between requests, so `app/api/ussd/route.ts`
 just re-derives where the user is by splitting that string on `*` — the
 array's *length* tells us the step, its *values* tell us what was picked.
 
@@ -119,11 +119,11 @@ only written to.
 
 ```bash
 # Root menu
-curl -X POST http://localhost:3000/api/webhooks/africastalking/ussd \
+curl -X POST http://localhost:3000/api/ussd \
   -d "sessionId=test1" -d "phoneNumber=+2547XXXXXXXX" -d "serviceCode=*384*1#" -d "text="
 
 # Chose "2" (Request a product)
-curl -X POST http://localhost:3000/api/webhooks/africastalking/ussd \
+curl -X POST http://localhost:3000/api/ussd \
   -d "sessionId=test1" -d "phoneNumber=+2547XXXXXXXX" -d "serviceCode=*384*1#" -d "text=2"
 
 # ...then category "1", product "1", quantity "2", location "Kasarani":

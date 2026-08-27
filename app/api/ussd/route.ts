@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { createOrderRequest } from "@/lib/orders/create-order";
+import { sendSms } from "@/lib/africastalking/sms";
+import { artisanWelcomeSms } from "@/lib/africastalking/templates";
 import {
   getCategoriesForMenu,
   getProductsForCategory,
@@ -45,14 +47,27 @@ export async function POST(req: NextRequest) {
 }
 
 async function handleUssdRequest(steps: string[], phoneNumber: string): Promise<string> {
+  const existingArtisan = await findArtisanByPhone(phoneNumber);
+
   // Root menu
   if (steps.length === 0) {
+    if (existingArtisan) {
+      return (
+        "CON Welcome to JuaLink\n" +
+        "1. Browse products\n" +
+        "2. Request a product\n" +
+        "3. Track my request\n" +
+        "4. Help"
+      );
+    }
+
     return (
       "CON Welcome to JuaLink\n" +
       "1. Browse products\n" +
       "2. Request a product\n" +
       "3. Track my request\n" +
-      "4. Help"
+      "4. Help\n" +
+      "5. Join as artisan"
     );
   }
 
@@ -67,6 +82,11 @@ async function handleUssdRequest(steps: string[], phoneNumber: string): Promise<
       return handleTrack(steps, phoneNumber);
     case "4":
       return `END JuaLink support: call or SMS ${SUPPORT_CONTACT}.`;
+    case "5":
+      if (existingArtisan) {
+        return "END You are already registered as an artisan.";
+      }
+      return handleArtisanRegistration(steps, phoneNumber);
     default:
       return "END Invalid choice. Please dial in again.";
   }
@@ -187,6 +207,97 @@ async function handleTrack(steps: string[], phoneNumber: string): Promise<string
   }
 
   return `END ${order.order_reference}: ${order.status.replace(/_/g, " ")}`;
+}
+
+// ---------------------------------------------------------------------------
+// 5. Join as artisan — name -> location -> shop -> application create.
+// ---------------------------------------------------------------------------
+async function handleArtisanRegistration(steps: string[], phoneNumber: string): Promise<string> {
+  if (!phoneNumber) {
+    return "END We could not read your phone number. Please try again later.";
+  }
+
+  // Step 1: ask full name
+  if (steps.length === 1) {
+    return "CON Join as artisan\nEnter your full name:";
+  }
+
+  const fullName = steps[1]?.trim();
+  if (!fullName || fullName.length < 2) {
+    return "END Invalid name. Please dial in again.";
+  }
+
+  // Step 2: ask location
+  if (steps.length === 2) {
+    return "CON Enter your location:";
+  }
+
+  const location = steps[2]?.trim();
+  if (!location || location.length < 2) {
+    return "END Invalid location. Please dial in again.";
+  }
+
+  // Step 3: ask shop name
+  if (steps.length === 3) {
+    return "CON Enter your shop name:";
+  }
+
+  const shopName = steps[3]?.trim();
+  if (!shopName || shopName.length < 2) {
+    return "END Invalid shop name. Please dial in again.";
+  }
+
+  const supabase = createServiceRoleClient();
+
+  // Prevent duplicate submissions for the same phone number.
+  const { data: existingArtisan } = await supabase
+    .from("artisans")
+    .select("id")
+    .eq("phone_number", phoneNumber)
+    .limit(1)
+    .maybeSingle();
+
+  if (existingArtisan) {
+    return "END You are already registered as an artisan.";
+  }
+
+  const { error } = await supabase.from("artisans").insert({
+    full_name: fullName,
+    business_name: shopName,
+    phone_number: phoneNumber,
+    location,
+    craft_category: "General",
+    products_made: "Not provided via USSD",
+    description: `USSD artisan application from ${shopName}.`,
+    verification_status: "VERIFIED",
+    is_active: true,
+  });
+
+  if (error) {
+    console.error("USSD artisan registration failed:", error);
+    return "END We could not submit your registration now. Please try again later.";
+  }
+
+  await sendSms({
+    to: phoneNumber,
+    message: artisanWelcomeSms(fullName),
+  });
+
+  return "END Registration successful. You are now registered as an artisan.";
+}
+
+async function findArtisanByPhone(phoneNumber: string): Promise<{ id: string } | null> {
+  if (!phoneNumber) return null;
+
+  const supabase = createServiceRoleClient();
+  const { data } = await supabase
+    .from("artisans")
+    .select("id")
+    .eq("phone_number", phoneNumber)
+    .limit(1)
+    .maybeSingle();
+
+  return data ?? null;
 }
 
 // ---------------------------------------------------------------------------
