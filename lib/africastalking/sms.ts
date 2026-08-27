@@ -1,95 +1,65 @@
-import { createServiceRoleClient } from "@/lib/supabase/server";
+// All customer/artisan-facing copy lives here, not scattered inline in the
+// webhook or server actions — makes it trivial to review wording (and add
+// Kiswahili variants later) without touching logic.
 
-interface SendSmsParams {
-  to: string; // E.164, e.g. +2547XXXXXXXX
-  message: string;
-  orderRequestId?: string;
-  artisanId?: string;
+export function artisanRequestSms(params: {
+  orderReference: string;
+  productName: string;
+  quantity: number;
+  location: string;
+  timeline: string | null;
+}) {
+  const { orderReference, productName, quantity, location, timeline } = params;
+  const timelinePart = timeline ? ` Buyer needs it ${timeline}.` : "";
+  return (
+    `JuaLink: New request ${orderReference}. Product: ${quantity} ${productName}. ` +
+    `Location: ${location}.${timelinePart} Reply '${orderReference} 1' to ACCEPT, '${orderReference} 2' to DECLINE, '${orderReference} 3' for CALLBACK.`
+  );
 }
 
-const AT_USERNAME = process.env.AFRICASTALKING_USERNAME;
-const AT_API_KEY = process.env.AFRICASTALKING_API_KEY;
-const AT_SENDER_ID = process.env.AFRICASTALKING_SENDER_ID;
+export function customerAcceptedSms(orderReference: string, workshopName: string) {
+  return (
+    `JuaLink: Your request ${orderReference} has been accepted by ${workshopName}. ` +
+    `The artisan will contact you to confirm final measurements, price, delivery, and deposit.`
+  );
+}
 
-/** True when real credentials are configured. Falls back to a console-logged
- *  mock otherwise, so the whole order flow is demoable with zero setup. */
-const isLiveMode = Boolean(AT_USERNAME && AT_API_KEY);
+export function customerDeclinedSms(orderReference: string) {
+  return (
+    `JuaLink: The artisan is unavailable for request ${orderReference}. ` +
+    `We are checking for another suitable maker.`
+  );
+}
 
-/**
- * Sends an SMS via Africa's Talking (or logs it in mock mode), and always
- * records the message in `sms_messages` so the admin comms log stays
- * complete regardless of whether delivery succeeded.
- */
-export async function sendSms({ to, message, orderRequestId, artisanId }: SendSmsParams) {
-  let africaTalkingMessageId: string | null = null;
-  let deliveryStatus = "queued";
+export function customerCallbackSms(orderReference: string) {
+  return (
+    `JuaLink: The artisan requested a callback regarding request ${orderReference}. ` +
+    `A JuaLink coordinator will contact you shortly.`
+  );
+}
 
-  if (isLiveMode) {
-    try {
-      const response = await fetch("https://api.africastalking.com/version1/messaging", {
-        method: "POST",
-        headers: {
-          apiKey: AT_API_KEY!,
-          "Content-Type": "application/x-www-form-urlencoded",
-          Accept: "application/json",
-        },
-        body: new URLSearchParams({
-          username: AT_USERNAME!,
-          to,
-          message,
-          ...(AT_SENDER_ID ? { from: AT_SENDER_ID } : {}),
-        }),
-      });
+export function customerSubmittedSms(orderReference: string) {
+  return (
+    `JuaLink: Request ${orderReference} submitted. We've notified the artisan — ` +
+    `you'll get an SMS as soon as they respond.`
+  );
+}
 
-      // Africa's Talking can return non-JSON bodies on some failures.
-      const rawBody = await response.text();
-      let data: any = null;
+export function customerReadySms(orderReference: string, workshopName: string) {
+  return `JuaLink: Request ${orderReference} is ready from ${workshopName}. Please coordinate collection/delivery with the artisan.`;
+}
 
-      try {
-        data = JSON.parse(rawBody);
-      } catch {
-        data = null;
-      }
+export function customerCompletedSms(orderReference: string) {
+  return `JuaLink: Request ${orderReference} is marked completed. Thank you for supporting local artisans.`;
+}
 
-      if (!response.ok) {
-        console.error("Africa's Talking SMS API error", {
-          status: response.status,
-          statusText: response.statusText,
-          body: rawBody,
-        });
-        deliveryStatus = "failed";
-      }
+export function customerCancelledSms(orderReference: string) {
+  return `JuaLink: Request ${orderReference} has been cancelled. Contact support if this was unexpected.`;
+}
 
-      const recipient = data?.SMSMessageData?.Recipients?.[0];
-
-      if (response.ok && recipient) {
-        africaTalkingMessageId = recipient.messageId ?? null;
-        deliveryStatus = recipient.status ?? "sent";
-      } else if (deliveryStatus !== "failed") {
-        deliveryStatus = "failed";
-      }
-    } catch (error) {
-      // Never throw out of sendSms — a failed SMS should not break the
-      // order flow. Log it, mark it failed, and let the admin comms log
-      // surface it for follow-up.
-      console.error("Africa's Talking SMS send failed:", error);
-      deliveryStatus = "failed";
-    }
-  } else {
-    console.log(`[MOCK SMS] to=${to} message="${message}"`);
-    deliveryStatus = "mock_sent";
-  }
-
-  const supabase = createServiceRoleClient();
-  await supabase.from("sms_messages").insert({
-    order_request_id: orderRequestId ?? null,
-    artisan_id: artisanId ?? null,
-    customer_phone: to,
-    direction: "outbound",
-    message_body: message,
-    africa_talking_message_id: africaTalkingMessageId,
-    delivery_status: deliveryStatus,
-  });
-
-  return { success: deliveryStatus !== "failed", deliveryStatus };
+export function artisanPendingReminderSms(orderReference: string) {
+  return (
+    `JuaLink reminder: request ${orderReference} is awaiting your response. ` +
+    `Reply '${orderReference} 1' to ACCEPT, '${orderReference} 2' to DECLINE, or '${orderReference} 3' for CALLBACK.`
+  );
 }
