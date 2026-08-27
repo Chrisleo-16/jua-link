@@ -1,6 +1,7 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+@import url('https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&display=swap');
 
 @layer base {
   body {
@@ -12,6 +13,40 @@
    the artisan mini-page. Centralised here so every surface (customer
    tracker, admin dashboard, SMS log) shows the same color for the
    same status. */
+.status-pending_artisan_confirmation { @apply bg-gold-soft text-charcoal; }
+.status-accepted { @apply bg-forest-soft text-forest; }
+.status-declined { @apply bg-rust-soft text-rust; }
+.status-callback_requested { @apply bg-gold-soft text-charcoal; }
+.status-quotation_needed { @apply bg-muted text-charcoal; }
+.status-deposit_discussion { @apply bg-muted text-charcoal; }
+.status-in_production { @apply bg-forest-soft text-forest; }
+.status-ready { @apply bg-forest-soft text-forest; }
+.status-completed { @apply bg-forest text-white; }
+.status-cancelled { @apply bg-rust-soft text-rust; }
+
+
+@layer base {
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', sans-serif;
+  }
+  .font-display {
+    font-family: 'Anton', sans-serif;
+  }
+}
+
+@layer utilities {
+  .marquee-track {
+    animation: marquee 22s linear infinite;
+  }
+  @keyframes marquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+}
+
+/* Status pill colors used across order tracking, admin tables, and
+   the artisan mini-page. */
 .status-pending_artisan_confirmation { @apply bg-gold-soft text-charcoal; }
 .status-accepted { @apply bg-forest-soft text-forest; }
 .status-declined { @apply bg-rust-soft text-rust; }
